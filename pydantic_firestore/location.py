@@ -1,4 +1,4 @@
-from typing import ClassVar, Union, Optional, cast, TYPE_CHECKING
+from typing import ClassVar, Union, Optional, cast, TYPE_CHECKING, Iterable
 from abc import ABCMeta
 from itertools import chain, takewhile, zip_longest
 from functools import lru_cache
@@ -10,7 +10,7 @@ from .utils import to_flatten
 
 
 if TYPE_CHECKING:
-    from google.cloud.firestore import Transaction, Client, WriteOption
+    from google.cloud.firestore import Transaction, Client, WriteOption, Query
     from google.cloud.firestore_v1 import DocumentReference, CollectionReference
     from google.api_core.retry import Retry
 
@@ -56,7 +56,7 @@ class FirestoreLocation(metaclass=ABCMeta):
         return cls.firestore_collection(*args).to_firestore(client)
 
     @classmethod
-    def create_to_firestore(
+    def firestore_create(
         cls,
         source: Source,
         data: GenericModel,
@@ -64,7 +64,6 @@ class FirestoreLocation(metaclass=ABCMeta):
         *args: str,
         retry: Optional["Retry"] = None,
         timeout: Optional[float] = None,
-        merge: Optional[bool] = None,
         **kwargs,
     ):
         client, transaction = source_to_tuple(source)
@@ -75,26 +74,41 @@ class FirestoreLocation(metaclass=ABCMeta):
         )
 
         if transaction is not None:
-            if merge is None:
-                transaction.create(reference, data)
-            else:
-                transaction.set(reference, data, merge=merge)
+            transaction.create(reference, data)
         else:
-            if merge is None:
-                return reference.create(
-                    data, timeout=timeout, retry=default_retry(retry)
-                )
-            else:
-                return reference.set(
-                    data, merge=merge, timeout=timeout, retry=default_retry(retry)
-                )
+            return reference.create(data, timeout=timeout, retry=default_retry(retry))
 
     @classmethod
-    def read_from_firestore(
+    def firestore_set(
+        cls,
+        source: Source,
+        data: GenericModel,
+        id: str,
+        *args: str,
+        retry: Optional["Retry"] = None,
+        timeout: Optional[float] = None,
+        merge: bool = False,
+        **kwargs,
+    ):
+        client, transaction = source_to_tuple(source)
+        reference = cls.document_reference(client, id, *args)
+
+        data = data.__pydantic_serializer__.to_python(
+            data, mode="python", by_alias=True, **kwargs
+        )
+
+        if transaction is not None:
+            transaction.set(reference, data, merge=merge)
+        else:
+            return reference.set(data, merge=merge, timeout=timeout, retry=default_retry(retry))
+
+    @classmethod
+    def firestore_read(
         cls: type[GenericModel],
         source: Source,
         id: str,
         *args: str,
+        fields: Iterable[str] | None = None,
         retry: Optional["Retry"] = None,
         timeout: Optional[float] = None,
     ) -> FirestoreSnapshot[GenericModel]:
@@ -102,11 +116,16 @@ class FirestoreLocation(metaclass=ABCMeta):
         return FirestoreSnapshot[cls].from_firestore(
             cast(type["FirestoreLocation"], cls)
             .document_reference(client, id, *args)
-            .get(transaction=transaction, timeout=timeout, retry=default_retry(retry))
+            .get(
+                transaction=transaction,
+                field_paths=fields,
+                timeout=timeout,
+                retry=default_retry(retry),
+            )
         )
 
     @classmethod
-    def update_to_firestore(
+    def firestore_update(
         cls,
         source: Source,
         data: GenericModel,
@@ -115,7 +134,7 @@ class FirestoreLocation(metaclass=ABCMeta):
         option: Optional["WriteOption"] = None,
         retry: Optional["Retry"] = None,
         timeout: Optional[float] = None,
-        ignore_flatten: set[str] | None = None,
+        ignore_flatten: Iterable[str] | None = None,
         **kwargs,
     ):
         client, transaction = source_to_tuple(source)
@@ -136,7 +155,7 @@ class FirestoreLocation(metaclass=ABCMeta):
             )
 
     @classmethod
-    def delete_from_firestore(
+    def firestore_delete(
         cls,
         source: Source,
         id: str,
@@ -152,6 +171,11 @@ class FirestoreLocation(metaclass=ABCMeta):
             transaction.delete(reference, option=option)
         else:
             return reference.delete(timeout=timeout, retry=default_retry(retry))
+
+    @classmethod
+    def firestore_query(cls, source: Source, *args: str) -> "Query":
+        client, _ = source_to_tuple(source)
+        return cls.collection_reference(client, *args)._query()
 
 
 def default_retry(value: Optional["Retry"]) -> "Retry":
