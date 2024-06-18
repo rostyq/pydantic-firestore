@@ -53,7 +53,7 @@ class FirestoreSnapshot(BaseModel, Generic[GenericModel]):
 
     @property
     def data(self):
-        return self.document.data if self.document else None
+        return self.document.data if self.document is not None else None
 
     @classmethod
     def from_firestore(
