@@ -1,95 +1,109 @@
-from typing import TypeVar, Generic
-from enum import Enum, auto, global_enum
+from typing import Annotated, Literal, Union, Any, Callable, TypeVar, Tuple
+from enum import StrEnum, auto, global_enum
 from functools import cache
-from numbers import Number
+from datetime import datetime
 
-from pydantic import RootModel, Field, ConfigDict, model_serializer
+from pydantic import PlainSerializer, WrapSerializer, ValidationInfo
 
-from .utils import to_firestore
+from .utils import firestore_serializer
 
 
-N = TypeVar("N", bound=Number)
-Item = TypeVar("Item")
+__all__ = [
+    "Sentinel",
+    "FIRESTORE_TIMESTAMP",
+    "FIRESTORE_DELETE",
+    "FIRESTORE_REMOVE",
+    "FIRESTORE_UNION",
+    "FIRESTORE_INCREMENT",
+    "FIRESTORE_MAXIMUM",
+    "FIRESTORE_MINIMUM",
+    "FirestoreArray",
+    "FirestoreNumeric",
+    "FirestoreMinMax",
+    "FirestoreTimestamp",
+    "FirestoreDelete",
+    "FirestoreSentinel",
+    "updatetime_serializer",
+    "sentinel_serializer",
+]
 
 
 @global_enum
-class Sentinel(Enum):
+class Sentinel(StrEnum):
     FIRESTORE_TIMESTAMP = auto()
     FIRESTORE_DELETE = auto()
+
+    FIRESTORE_REMOVE = auto()
+    FIRESTORE_UNION = auto()
+
+    FIRESTORE_INCREMENT = auto()
+    FIRESTORE_MAXIMUM = auto()
+    FIRESTORE_MINIMUM = auto()
 
     @classmethod
     @cache
     def firestore_mapping(cls):
-        from google.cloud.firestore_v1.transforms import SERVER_TIMESTAMP, DELETE_FIELD
+        from google.cloud.firestore_v1.transforms import (
+            SERVER_TIMESTAMP,
+            DELETE_FIELD,
+            ArrayRemove,
+            ArrayUnion,
+            Increment,
+            Maximum,
+            Minimum,
+        )
 
-        return {cls.FIRESTORE_TIMESTAMP: SERVER_TIMESTAMP, cls.FIRESTORE_FIELD: DELETE_FIELD}
+        return {
+            cls.FIRESTORE_TIMESTAMP: lambda _: SERVER_TIMESTAMP,
+            cls.FIRESTORE_DELETE: lambda _: DELETE_FIELD,
+            cls.FIRESTORE_REMOVE: ArrayRemove,
+            cls.FIRESTORE_UNION: ArrayUnion,
+            cls.FIRESTORE_INCREMENT: Increment,
+            cls.FIRESTORE_MAXIMUM: Maximum,
+            cls.FIRESTORE_MINIMUM: Minimum,
+        }
 
-    def to_firestore(self, **kwargs):
-        return self.__class__.firestore_mapping()[self]
-
-
-class Array(RootModel, Generic[Item]):
-    root: list[Item] = Field(kw_only=False)
-
-    def __len__(self):
-        return len(self.root)
-
-    def __iter__(self):
-        return self.root.__iter__()
-
-
-class ArrayRemove(Array[Item]):
-    @model_serializer(mode="plain", return_type=object)
-    def to_firestore(self, **kwargs):
-        from google.cloud.firestore_v1.transforms import ArrayRemove
-
-        return ArrayRemove(self.root)
+    def to_firestore(self, *, value=None, **kwargs) -> object:
+        return self.__class__.firestore_mapping()[self](value)
 
 
-class ArrayUnion(Array[Item]):
-    @model_serializer(mode="plain", return_type=object)
-    def to_firestore(self, **kwargs):
-        from google.cloud.firestore_v1.transforms import ArrayUnion
+FIRESTORE_TIMESTAMP = Sentinel.FIRESTORE_TIMESTAMP
+FIRESTORE_DELETE = Sentinel.FIRESTORE_DELETE
 
-        return ArrayUnion(self.root)
+FIRESTORE_REMOVE = Sentinel.FIRESTORE_REMOVE
+FIRESTORE_UNION = Sentinel.FIRESTORE_UNION
 
+FIRESTORE_INCREMENT = Sentinel.FIRESTORE_INCREMENT
+FIRESTORE_MAXIMUM = Sentinel.FIRESTORE_MAXIMUM
+FIRESTORE_MINIMUM = Sentinel.FIRESTORE_MINIMUM
 
-class Numeric(RootModel, Generic[N]):
-    root: N = Field(kw_only=False)
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+FirestoreArray = Literal[FIRESTORE_REMOVE, FIRESTORE_UNION]
+FirestoreNumeric = Literal[FIRESTORE_INCREMENT, FIRESTORE_MAXIMUM, FIRESTORE_MINIMUM]
+FirestoreMinMax = Literal[FIRESTORE_MAXIMUM, FIRESTORE_MINIMUM]
 
-    def __gt__(self, other):
-        return self.root > other
-
-    def __lt__(self, other):
-        return self.root < other
-
-    def __ge__(self, other):
-        return self.root >= other
-
-    def __le__(self, other):
-        return self.root <= other
+FirestoreTimestamp = Annotated[Literal[FIRESTORE_TIMESTAMP], firestore_serializer]
+FirestoreDelete = Annotated[Literal[FIRESTORE_DELETE], firestore_serializer]
 
 
-class Increment(Numeric[N]):
-    @model_serializer(mode="plain", return_type=object)
-    def to_firestore(self, **kwargs):
-        from google.cloud.firestore_v1.transforms import Increment
-
-        return Increment(to_firestore(self.root))
+updatetime_serializer = PlainSerializer(
+    lambda x: x if x is not None else FIRESTORE_TIMESTAMP,
+    return_type=Union[datetime, FirestoreTimestamp],
+)
 
 
-class Maximum(Numeric[N]):
-    @model_serializer(mode="plain", return_type=object)
-    def to_firestore(self, **kwargs):
-        from google.cloud.firestore_v1.transforms import Maximum
+def _serialize_sentinel(value: Any, handler: Callable, info: ValidationInfo):
+    if (
+        isinstance(value, tuple)
+        and len(value) == 2
+        and (isinstance(value[0], Sentinel) or value[0] in Sentinel)
+    ):
+        sentinel, value = value
+        return Sentinel(sentinel).to_firestore(value=handler(value))
+    else:
+        return handler(value)
 
-        return Maximum(to_firestore(self.root))
 
+sentinel_serializer = WrapSerializer(_serialize_sentinel, return_type=object)
 
-class Minimum(Numeric[N]):
-    @model_serializer(mode="plain", return_type=object)
-    def to_firestore(self, **kwargs):
-        from google.cloud.firestore_v1.transforms import Minimum
-
-        return Minimum(to_firestore(self.root))
+T = TypeVar("T")
+FirestoreSentinel = Annotated[Union[T, Tuple[Sentinel, T]], sentinel_serializer]
