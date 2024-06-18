@@ -2,7 +2,6 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from pydantic import (
     RootModel,
-    AliasChoices,
     ConfigDict,
     model_validator,
     Field,
@@ -16,9 +15,7 @@ if TYPE_CHECKING:
 
 
 class ReferenceModel(RootModel):
-    root: FirestorePath = Field(
-        kw_only=False, validation_alias=AliasChoices("_path", "path", "root")
-    )
+    root: FirestorePath = Field(kw_only=False)
 
     model_config = ConfigDict(frozen=True)
 
