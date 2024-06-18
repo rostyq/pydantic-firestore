@@ -1,4 +1,4 @@
-from typing import Union, TYPE_CHECKING, Any
+from typing import Union, TYPE_CHECKING, Any, Iterable
 from decimal import Decimal
 from functools import singledispatch
 from collections.abc import MutableMapping
@@ -47,7 +47,7 @@ def _to_flatten(
 def to_flatten(
     obj: dict[str, Any],
     *,
-    exclude: set[str] | None = None,
+    exclude: Iterable[str] | None = None,
 ) -> dict[str, Any]:
     from google.cloud.firestore_v1.field_path import FieldPath
 
