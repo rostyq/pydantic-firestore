@@ -177,6 +177,50 @@ class FirestoreLocation(metaclass=ABCMeta):
         client, _ = source_to_tuple(source)
         return cls.collection_reference(client, *args)._query()
 
+    def create_to_firestore(
+        self,
+        source: Source,
+        id: str,
+        *args: str,
+        retry: Optional["Retry"] = None,
+        timeout: Optional[float] = None,
+    ):
+        return self.firestore_create(
+            source, self, id, *args, retry=retry, timeout=timeout
+        )
+
+    def set_to_firestore(
+        self,
+        source: Source,
+        id: str,
+        *args: str,
+        retry: Optional["Retry"] = None,
+        timeout: Optional[float] = None,
+        merge: bool = False,
+    ):
+        return self.firestore_set(
+            source, self, id, *args, merge=merge, retry=retry, timeout=timeout
+        )
+
+    def update_to_firestore(
+        self,
+        source: Source,
+        id: str,
+        *args: str,
+        retry: Optional["Retry"] = None,
+        timeout: Optional[float] = None,
+        ignore_flatten: Iterable[str] | None = None,
+    ):
+        return self.firestore_update(
+            source,
+            self,
+            id,
+            *args,
+            retry=retry,
+            timeout=timeout,
+            ignore_flatten=ignore_flatten,
+        )
+
 
 def default_retry(value: Optional["Retry"]) -> "Retry":
     from google.api_core.gapic_v1.method import DEFAULT
