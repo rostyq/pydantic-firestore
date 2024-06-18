@@ -2,6 +2,7 @@ from typing import ClassVar, Union, Optional, cast, TYPE_CHECKING, Iterable
 from abc import ABCMeta
 from itertools import chain, takewhile, zip_longest
 from functools import lru_cache
+from inspect import isclass
 
 from .reference import FirestoreCollection
 from .document import GenericModel
@@ -24,6 +25,14 @@ def source_to_tuple(source: Source) -> tuple["Client", Optional["Transaction"]]:
 
 class FirestoreLocation(metaclass=ABCMeta):
     firestore_location: ClassVar[tuple[str, ...]] = ()
+
+    def __init_subclass__(cls, **kwargs):
+        if cls.firestore_location != ():
+            for value in cls.__dict__.values():
+                if isclass(value) and issubclass(value, FirestoreLocation):
+                    value.firestore_location = cls.firestore_location
+
+        super().__init_subclass__(**kwargs)
 
     @classmethod
     @lru_cache
