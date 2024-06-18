@@ -1,4 +1,4 @@
-from typing import Generic, TypeVar, Any, Callable, Annotated, Optional
+from typing import Generic, TypeVar, Any, Callable
 from datetime import datetime
 
 from pydantic import (
