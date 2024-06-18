@@ -12,6 +12,7 @@ from pydantic import (
 
 class FirestorePath(RootModel):
     root: tuple[str, ...] = Field(kw_only=False)
+
     model_config = ConfigDict(frozen=True)
 
     @model_serializer(when_used="json")
