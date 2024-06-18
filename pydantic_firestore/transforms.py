@@ -1,9 +1,8 @@
 from typing import Annotated, Literal, Union, Any, Callable, TypeVar, Tuple
 from enum import StrEnum, auto, global_enum
 from functools import cache
-from datetime import datetime
 
-from pydantic import PlainSerializer, WrapSerializer, ValidationInfo
+from pydantic import WrapSerializer, ValidationInfo
 
 from .utils import firestore_serializer
 
@@ -23,7 +22,6 @@ __all__ = [
     "FirestoreTimestamp",
     "FirestoreDelete",
     "FirestoreSentinel",
-    "updatetime_serializer",
     "sentinel_serializer",
 ]
 
@@ -83,12 +81,6 @@ FirestoreMinMax = Literal[FIRESTORE_MAXIMUM, FIRESTORE_MINIMUM]
 
 FirestoreTimestamp = Annotated[Literal[FIRESTORE_TIMESTAMP], firestore_serializer]
 FirestoreDelete = Annotated[Literal[FIRESTORE_DELETE], firestore_serializer]
-
-
-updatetime_serializer = PlainSerializer(
-    lambda x: x if x is not None else FIRESTORE_TIMESTAMP,
-    return_type=Union[datetime, FirestoreTimestamp],
-)
 
 
 def _serialize_sentinel(value: Any, handler: Callable, info: ValidationInfo):
