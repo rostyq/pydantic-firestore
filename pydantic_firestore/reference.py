@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from pydantic import (
     RootModel,
@@ -6,6 +6,7 @@ from pydantic import (
     model_validator,
     Field,
     WrapValidator,
+    ValidatorFunctionWrapHandler
 )
 
 from .path import FirestorePath
@@ -75,7 +76,7 @@ class FirestoreCollection(ReferenceModel):
         return client.collection(*self.root)
 
 
-def _validate_collection(value: Any, handler: Callable):
+def _validate_collection(value: Any, handler: ValidatorFunctionWrapHandler):
     if isinstance(value, FirestoreCollection):
         return value
     elif isinstance(value, tuple):

@@ -1,4 +1,4 @@
-from typing import Generic, TypeVar, Any, Callable
+from typing import Generic, TypeVar, Any
 from datetime import datetime
 
 from pydantic import (
@@ -8,6 +8,7 @@ from pydantic import (
     AliasChoices,
     ValidationInfo,
     WrapValidator,
+    ValidatorFunctionWrapHandler
 )
 
 
@@ -20,10 +21,10 @@ class DocumentModel(BaseModel, Generic[GenericModel]):
 
     data: GenericModel = Field(validation_alias=AliasChoices("_data", "data"))
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, from_attributes=False)
 
 
-def _validate_document(value: Any, handler: Callable, info: ValidationInfo):
+def _validate_document(value: Any, handler: ValidatorFunctionWrapHandler, info: ValidationInfo):
     create_time = info.data.get("create_time")
     update_time = info.data.get("update_time")
 
