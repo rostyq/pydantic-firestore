@@ -4,6 +4,7 @@ from functools import singledispatch
 from collections.abc import MutableMapping
 
 from pydantic import PlainSerializer
+from pydantic_core import Url
 
 
 if TYPE_CHECKING:
@@ -24,6 +25,11 @@ def _(value: Decimal) -> Union[int, float]:
         return int(value)
     else:
         return float(value)
+
+
+@to_firestore.register
+def _(value: Url) -> str:
+    return str(value)
 
 
 def _to_flatten(
