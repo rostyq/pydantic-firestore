@@ -1,7 +1,9 @@
 from typing import Union, TYPE_CHECKING, Any, Iterable
+from uuid import UUID
 from decimal import Decimal
 from functools import singledispatch
 from collections.abc import MutableMapping
+from ipaddress import IPv4Address, IPv6Address
 
 from pydantic import PlainSerializer
 from pydantic_core import Url
@@ -29,6 +31,21 @@ def _(value: Decimal) -> Union[int, float]:
 
 @to_firestore.register
 def _(value: Url) -> str:
+    return str(value)
+
+
+@to_firestore.register
+def _(value: UUID) -> str:
+    return str(value)
+
+
+@to_firestore.register
+def _(value: IPv4Address) -> str:
+    return str(value)
+
+
+@to_firestore.register
+def _(value: IPv6Address) -> str:
     return str(value)
 
 
