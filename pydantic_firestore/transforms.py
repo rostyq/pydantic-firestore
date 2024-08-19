@@ -75,12 +75,16 @@ FIRESTORE_INCREMENT = Sentinel.FIRESTORE_INCREMENT
 FIRESTORE_MAXIMUM = Sentinel.FIRESTORE_MAXIMUM
 FIRESTORE_MINIMUM = Sentinel.FIRESTORE_MINIMUM
 
-FirestoreArray = Literal[FIRESTORE_REMOVE, FIRESTORE_UNION]
-FirestoreNumeric = Literal[FIRESTORE_INCREMENT, FIRESTORE_MAXIMUM, FIRESTORE_MINIMUM]
-FirestoreMinMax = Literal[FIRESTORE_MAXIMUM, FIRESTORE_MINIMUM]
+FirestoreArray = Literal[Sentinel.FIRESTORE_REMOVE, Sentinel.FIRESTORE_UNION]
+FirestoreNumeric = Literal[
+    Sentinel.FIRESTORE_INCREMENT, Sentinel.FIRESTORE_MAXIMUM, Sentinel.FIRESTORE_MINIMUM
+]
+FirestoreMinMax = Literal[Sentinel.FIRESTORE_MAXIMUM, Sentinel.FIRESTORE_MINIMUM]
 
-FirestoreTimestamp = Annotated[Literal[FIRESTORE_TIMESTAMP], firestore_serializer]
-FirestoreDelete = Annotated[Literal[FIRESTORE_DELETE], firestore_serializer]
+FirestoreTimestamp = Annotated[
+    Literal[Sentinel.FIRESTORE_TIMESTAMP], firestore_serializer
+]
+FirestoreDelete = Annotated[Literal[Sentinel.FIRESTORE_DELETE], firestore_serializer]
 
 
 def _serialize_sentinel(value: Any, handler: Callable, info: ValidationInfo):
