@@ -1,4 +1,5 @@
 from typing import (
+    Callable,
     ClassVar,
     Union,
     Optional,
@@ -15,12 +16,19 @@ from itertools import chain, takewhile, zip_longest
 from functools import lru_cache
 from inspect import isclass
 
-from pydantic import BaseModel
+from pydantic import (
+    BaseModel,
+    model_serializer,
+    SerializerFunctionWrapHandler,
+    ValidationInfo,
+    SerializationInfo,
+)
 
 from .reference import FirestoreCollection
 from .document import GenericModel
 from .snapshot import FirestoreSnapshot
 from .utils import to_flatten
+from .transforms import Sentinel
 
 
 if TYPE_CHECKING:
@@ -39,6 +47,20 @@ if TYPE_CHECKING:
 
 
 Source = Union["Client", "Transaction", "BulkWriter", "WriteBatch"]
+
+
+class PydanticParams(TypedDict):
+    include: NotRequired[Iterable[str] | None]
+    exclude: NotRequired[Iterable[str] | None]
+    by_alias: NotRequired[bool]
+    exclude_unset: NotRequired[bool]
+    exclude_defaults: NotRequired[bool]
+    exclude_none: NotRequired[bool]
+    round_trip: NotRequired[bool]
+    warnings: NotRequired[bool | Literal["none", "warn", "error"]]
+    fallback: NotRequired[Callable[[Any], Any] | None]
+    serialize_as_any: NotRequired[bool]
+    context: NotRequired[Any | None]
 
 
 class FirestoreBaseParams(TypedDict):
@@ -63,6 +85,18 @@ class FirestoreSetParams(FirestoreCreateParams):
 
 
 class FirestoreWriteParams(FirestoreSetParams, FirestoreUpdateParams):
+    pass
+
+
+class CreateParams(FirestoreCreateParams, PydanticParams):
+    pass
+
+
+class UpdateParams(FirestoreUpdateParams, PydanticParams):
+    pass
+
+
+class SetParams(FirestoreSetParams, PydanticParams):
     pass
 
 
@@ -271,17 +305,22 @@ class FirestoreModel(BaseModel):
 
     @classmethod
     def firestore_dump(
-        cls,
-        data: GenericModel,
-        exclude_unset: bool = False,
-        context: dict[str, Any] | None = None,
+        cls, data: GenericModel, **kwargs: Unpack[PydanticParams]
     ) -> dict[str, Any]:
         return data.__pydantic_serializer__.to_python(
             data,
             mode="python",
-            by_alias=True,
-            exclude_unset=exclude_unset,
-            context=context,
+            by_alias=kwargs.get("by_alias", True),
+            exclude=kwargs.get("exclude"),
+            include=kwargs.get("include"),
+            exclude_unset=kwargs.get("exclude_unset", False),
+            exclude_defaults=kwargs.get("exclude_defaults", False),
+            exclude_none=kwargs.get("exclude_none", False),
+            warnings=kwargs.get("warnings", True),
+            round_trip=kwargs.get("round_trip", False),
+            fallback=kwargs.get("fallback"),
+            serialize_as_any=kwargs.get("serialize_as_any", False),
+            context=kwargs.get("context"),
         )
 
     @classmethod
@@ -291,7 +330,7 @@ class FirestoreModel(BaseModel):
         source: Source,
         id: str,
         *args: str,
-        data: dict | None = None,
+        data: dict[str, Any] | None = None,
         **kwargs: Unpack[FirestoreWriteParams],
     ):
         client, handler = source_to_handler(source)
@@ -306,10 +345,15 @@ class FirestoreModel(BaseModel):
         data: GenericModel,
         id: str,
         *args: str,
-        **kwargs: Unpack[FirestoreCreateParams],
+        **kwargs: Unpack[CreateParams],
     ):
         return cls.firestore_write(
-            "create", source, id, *args, data=cls.firestore_dump(data), **kwargs
+            "create",
+            source,
+            id,
+            *args,
+            data=cls.firestore_dump(data, **kwargs),
+            **kwargs,
         )
 
     @classmethod
@@ -319,10 +363,15 @@ class FirestoreModel(BaseModel):
         data: GenericModel,
         id: str,
         *args: str,
-        **kwargs: Unpack[FirestoreSetParams],
+        **kwargs: Unpack[SetParams],
     ) -> Optional["WriteResult"]:
         return cls.firestore_write(
-            "set", source, id, *args, data=cls.firestore_dump(data), **kwargs
+            "set",
+            source,
+            id,
+            *args,
+            data=cls.firestore_dump(data, **kwargs),
+            **kwargs,
         )
 
     @classmethod
@@ -360,7 +409,7 @@ class FirestoreModel(BaseModel):
         id: str,
         *args: str,
         ignore_flatten: Iterable[str] | None = None,
-        **kwargs: Unpack[FirestoreUpdateParams],
+        **kwargs: Unpack[UpdateParams],
     ) -> Optional["WriteResult"]:
         return cls.firestore_write(
             "update",
@@ -368,7 +417,8 @@ class FirestoreModel(BaseModel):
             id,
             *args,
             data=to_flatten(
-                cls.firestore_dump(data, exclude_unset=True), exclude=ignore_flatten
+                cls.firestore_dump(data, exclude_unset=True, **kwargs),
+                exclude=ignore_flatten,
             ),
             **kwargs,
         )
@@ -403,25 +453,28 @@ class FirestoreModel(BaseModel):
         self,
         source: Source,
         *args: str,
+        context: dict[str, Any] | None = None,
         **kwargs: Unpack[FirestoreCreateParams],
     ):
         id, args = self._firestore_path(*args)
-        return self.firestore_create(source, self, id, *args, **kwargs)
+        return self.firestore_create(source, self, id, *args, context=context, **kwargs)
 
     def set_to_firestore(
         self,
         source: Source,
         *args: str,
+        context: dict[str, Any] | None = None,
         **kwargs: Unpack[FirestoreSetParams],
     ):
         id, *args = self._firestore_path(*args)
-        return self.firestore_set(source, self, id, *args, **kwargs)
+        return self.firestore_set(source, self, id, *args, context=context, **kwargs)
 
     def update_to_firestore(
         self,
         source: Source,
         *args: str,
         ignore_flatten: Iterable[str] | None = None,
+        context: dict[str, Any] | None = None,
         **kwargs: Unpack[FirestoreUpdateParams],
     ):
         id, args = self._firestore_path(*args)
@@ -431,6 +484,7 @@ class FirestoreModel(BaseModel):
             id,
             *args,
             ignore_flatten=ignore_flatten,
+            context=context,
             **kwargs,
         )
 
