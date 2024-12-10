@@ -106,4 +106,4 @@ def _serialize_sentinel(value: Any, handler: Callable, info: ValidationInfo):
 sentinel_serializer = WrapSerializer(_serialize_sentinel, return_type=object)
 
 T = TypeVar("T")
-FirestoreSentinel = Annotated[Union[T, Tuple[T]], sentinel_serializer]
+FirestoreSentinel = Annotated[Union[T, Tuple[Sentinel, T]], sentinel_serializer]
