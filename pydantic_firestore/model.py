@@ -16,19 +16,12 @@ from itertools import chain, takewhile, zip_longest
 from functools import lru_cache
 from inspect import isclass
 
-from pydantic import (
-    BaseModel,
-    model_serializer,
-    SerializerFunctionWrapHandler,
-    ValidationInfo,
-    SerializationInfo,
-)
+from pydantic import BaseModel
 
 from .reference import FirestoreCollection
 from .document import GenericModel
 from .snapshot import FirestoreSnapshot
 from .utils import to_flatten
-from .transforms import Sentinel
 
 
 if TYPE_CHECKING:
@@ -373,6 +366,14 @@ class FirestoreModel(BaseModel):
             data=cls.firestore_dump(data, **kwargs),
             **kwargs,
         )
+    
+    @classmethod
+    def firestore_context(cls, **kwargs) -> dict[str]:
+        return {
+            "firestore_id_field": cls.firestore_id_field,
+            "firestore_path_fields": cls.firestore_path_fields,
+            **kwargs,
+        }
 
     @classmethod
     def firestore_read(
@@ -394,11 +395,7 @@ class FirestoreModel(BaseModel):
                 retry=default_retry(kwargs.get("retry")),
             ),
             strict=strict,
-            context={
-                "firestore_id_field": _cls.firestore_id_field,
-                "firestore_path_fields": _cls.firestore_path_fields,
-                **(context or {}),
-            },
+            context=_cls.firestore_context(**(context or {})),
         )
 
     @classmethod
@@ -454,7 +451,7 @@ class FirestoreModel(BaseModel):
         source: Source,
         *args: str,
         context: dict[str, Any] | None = None,
-        **kwargs: Unpack[FirestoreCreateParams],
+        **kwargs: Unpack[CreateParams],
     ):
         id, args = self._firestore_path(*args)
         return self.firestore_create(source, self, id, *args, context=context, **kwargs)
@@ -464,7 +461,7 @@ class FirestoreModel(BaseModel):
         source: Source,
         *args: str,
         context: dict[str, Any] | None = None,
-        **kwargs: Unpack[FirestoreSetParams],
+        **kwargs: Unpack[SetParams],
     ):
         id, *args = self._firestore_path(*args)
         return self.firestore_set(source, self, id, *args, context=context, **kwargs)
@@ -475,7 +472,7 @@ class FirestoreModel(BaseModel):
         *args: str,
         ignore_flatten: Iterable[str] | None = None,
         context: dict[str, Any] | None = None,
-        **kwargs: Unpack[FirestoreUpdateParams],
+        **kwargs: Unpack[UpdateParams],
     ):
         id, args = self._firestore_path(*args)
         return self.firestore_update(
