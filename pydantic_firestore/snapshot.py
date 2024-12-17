@@ -62,6 +62,7 @@ class FirestoreSnapshot(BaseModel, Generic[GenericModel]):
         strict: bool = False,
         context: dict[str, Any] | None = None,
     ) -> "FirestoreSnapshot[GenericModel]":
+        ctx_fn = getattr(cls.__pydantic_generic_metadata__["args"][0], "firestore_context", lambda **kwargs: kwargs)
         return cls.__pydantic_validator__.validate_python(
-            fix_snapshot(snapshot), strict=strict, from_attributes=True, context=context
+            fix_snapshot(snapshot), strict=strict, from_attributes=True, context=ctx_fn(**(context or {}))
         )
