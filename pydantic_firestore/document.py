@@ -12,7 +12,7 @@ from pydantic import (
 )
 
 
-GenericModel = TypeVar("GenericModel", bound=BaseModel)
+GenericModel = TypeVar("GenericModel")
 
 
 class DocumentModel(BaseModel, Generic[GenericModel]):
