@@ -13,7 +13,7 @@ from typing import (
     NotRequired,
 )
 from itertools import chain, takewhile, zip_longest
-from functools import lru_cache
+from functools import lru_cache, cache
 from inspect import isclass
 
 from pydantic import BaseModel
@@ -99,6 +99,13 @@ class FirestoreDict(TypedDict, total=False):
     location: Union[str, tuple[str, ...]]
 
 
+@cache
+def default_param():
+    from google.api_core.gapic_v1.method import DEFAULT
+
+    return DEFAULT
+
+
 class FirestoreHandler:
     def create(
         self,
@@ -107,7 +114,9 @@ class FirestoreHandler:
         **kwargs: Unpack[FirestoreCreateParams],
     ) -> Optional["WriteResult"]:
         return reference.create(
-            data, timeout=kwargs.get("timeout"), retry=kwargs.get("retry")
+            data,
+            timeout=kwargs.get("timeout"),
+            retry=kwargs.get("retry", default_param()),
         )
 
     def set(
@@ -118,9 +127,9 @@ class FirestoreHandler:
     ) -> Optional["WriteResult"]:
         return reference.set(
             data,
-            merge=kwargs.get("merge"),
+            merge=kwargs.get("merge", False),
             timeout=kwargs.get("timeout"),
-            retry=kwargs.get("retry"),
+            retry=kwargs.get("retry", default_param()),
         )
 
     def update(
@@ -132,7 +141,7 @@ class FirestoreHandler:
         return reference.update(
             data,
             timeout=kwargs.get("timeout"),
-            retry=kwargs.get("retry"),
+            retry=kwargs.get("retry", default_param()),
             option=kwargs.get("option"),
         )
 
@@ -143,7 +152,7 @@ class FirestoreHandler:
     ) -> Optional["Timestamp"]:
         return reference.delete(
             timeout=kwargs.get("timeout"),
-            retry=kwargs.get("retry"),
+            retry=kwargs.get("retry", default_param()),
             option=kwargs.get("option"),
         )
 
@@ -168,7 +177,7 @@ class TransactionHandler(FirestoreHandler):
         return self.writer.set(
             reference,
             data,
-            merge=kwargs.get("merge"),
+            merge=kwargs.get("merge", False),
         )
 
     def update(self, reference, data, **kwargs):
@@ -193,7 +202,7 @@ class BulkHandler(FirestoreHandler):
         return self.writer.set(
             reference,
             data,
-            merge=kwargs.get("merge"),
+            merge=kwargs.get("merge", False),
             attempts=kwargs.get("attempts", 0),
         )
 
@@ -366,7 +375,7 @@ class FirestoreModel(BaseModel):
             data=cls.firestore_dump(data, **kwargs),
             **kwargs,
         )
-    
+
     @classmethod
     def firestore_context(cls, **kwargs) -> dict[str]:
         return {
@@ -392,7 +401,7 @@ class FirestoreModel(BaseModel):
                 transaction=transaction,
                 field_paths=kwargs.get("field_paths"),
                 timeout=kwargs.get("timeout"),
-                retry=default_retry(kwargs.get("retry")),
+                retry=kwargs.get("retry"),
             ),
             strict=strict,
             context=_cls.firestore_context(**(context or {})),
@@ -493,9 +502,3 @@ class FirestoreModel(BaseModel):
     ):
         id, args = self._firestore_path(*args)
         return self.firestore_delete(source, id, *args, **kwargs)
-
-
-def default_retry(value: Optional["Retry"]) -> "Retry":
-    from google.api_core.gapic_v1.method import DEFAULT
-
-    return value if value is not None else DEFAULT
