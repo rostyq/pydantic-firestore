@@ -463,7 +463,7 @@ class FirestoreModel(BaseModel):
         context: dict[str, Any] | None = None,
         **kwargs: Unpack[SetParams],
     ):
-        id, *args = self._firestore_path(*args)
+        id, args = self._firestore_path(*args)
         return self.firestore_set(source, self, id, *args, context=context, **kwargs)
 
     def update_to_firestore(
