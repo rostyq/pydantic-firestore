@@ -334,18 +334,27 @@ def source_to_handler(
 
 @lru_cache
 def source_to_tuple(
-    source: Source,
-) -> "tuple[Union[Client, AsyncClient], Union[None, Transaction, AsyncTransaction]]":
-    from google.cloud.firestore import (
-        Transaction,
-        AsyncTransaction,
-        Client,
-        AsyncClient,
-    )
+    source: "Union[Client, Transaction, WriteBatch, BulkWriter]",
+) -> "tuple[Client, Optional[Transaction]]":
+    from google.cloud.firestore import Transaction, Client
 
-    if isinstance(source, (Transaction, AsyncTransaction)):
+    if isinstance(source, Transaction):
         return source._client, source
-    elif isinstance(source, (Client, AsyncClient)):
+    elif isinstance(source, Client):
+        return source, None
+    else:
+        raise ValueError("Invalid firestore source")
+
+
+@lru_cache
+def async_source_to_tuple(
+    source: "Union[Client, AsyncClient, AsyncTransaction, AsyncWriteBatch]",
+) -> "tuple[AsyncClient, Optional[AsyncTransaction]]":
+    from google.cloud.firestore import AsyncTransaction, AsyncClient
+
+    if isinstance(source, AsyncTransaction):
+        return source._client, source
+    elif isinstance(source, AsyncClient):
         return source, None
     else:
         raise ValueError("Invalid firestore source")
@@ -515,10 +524,22 @@ class FirestoreModel(BaseModel):
         strict: bool = False,
         context: dict[str, Any] | None = None,
         **kwargs: Unpack[FirestoreReadParams],
-    ) -> FirestoreSnapshot[GenericModel]: ...
-    @overload
+    ) -> FirestoreSnapshot[GenericModel]:
+        client, transaction = source_to_tuple(source)
+        _cls = cast(type[FirestoreModel], cls)
+        return FirestoreSnapshot[cls].from_firestore(
+            _cls.document_reference(client, id, *args).get(
+                transaction=transaction,
+                field_paths=kwargs.get("field_paths"),
+                timeout=kwargs.get("timeout"),
+                retry=kwargs.get("retry"),
+            ),
+            strict=strict,
+            context=_cls.firestore_context(**(context or {})),
+        )
+
     @classmethod
-    def firestore_read(
+    async def firestore_read_async(
         cls: type[GenericModel],
         source: Union["AsyncClient", "AsyncTransaction"],
         id: str,
@@ -526,23 +547,11 @@ class FirestoreModel(BaseModel):
         strict: bool = False,
         context: dict[str, Any] | None = None,
         **kwargs: Unpack[FirestoreReadParams],
-    ) -> Awaitable[FirestoreSnapshot[GenericModel]]: ...
-    @classmethod
-    def firestore_read(
-        cls: type[GenericModel],
-        source: Union["Client", "AsyncClient", "Transaction", "AsyncTransaction"],
-        id: str,
-        *args: str,
-        strict: bool = False,
-        context: dict[str, Any] | None = None,
-        **kwargs: Unpack[FirestoreReadParams],
-    ) -> Union[
-        FirestoreSnapshot[GenericModel], Awaitable[FirestoreSnapshot[GenericModel]]
-    ]:
-        client, transaction = source_to_tuple(source)
+    ) -> FirestoreSnapshot[GenericModel]:
+        client, transaction = async_source_to_tuple(source)
         _cls = cast(type[FirestoreModel], cls)
         return FirestoreSnapshot[cls].from_firestore(
-            _cls.document_reference(client, id, *args).get(
+            await _cls.document_reference(client, id, *args).get(
                 transaction=transaction,
                 field_paths=kwargs.get("field_paths"),
                 timeout=kwargs.get("timeout"),
