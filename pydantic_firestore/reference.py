@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, overload, Union
 
 from pydantic import (
     RootModel,
@@ -6,13 +6,20 @@ from pydantic import (
     model_validator,
     Field,
     WrapValidator,
-    ValidatorFunctionWrapHandler
+    ValidatorFunctionWrapHandler,
 )
 
 from .path import FirestorePath
 
 if TYPE_CHECKING:
-    from google.cloud.firestore import DocumentReference, Client, CollectionReference
+    from google.cloud.firestore import (
+        DocumentReference,
+        Client,
+        CollectionReference,
+        AsyncDocumentReference,
+        AsyncCollectionReference,
+        AsyncClient,
+    )
 
 
 class ReferenceModel(RootModel):
@@ -50,7 +57,13 @@ class FirestoreDocument(ReferenceModel):
     def from_firestore(cls, value: "DocumentReference") -> "FirestoreDocument":
         return cls.model_validate(value._path)
 
-    def to_firestore(self, client: "Client") -> "DocumentReference":
+    @overload
+    def to_firestore(self, client: "AsyncClient") -> "AsyncDocumentReference": ...
+    @overload
+    def to_firestore(self, client: "Client") -> "DocumentReference": ...
+    def to_firestore(
+        self, client: "Union[Client, AsyncClient]"
+    ) -> "Union[DocumentReference, AsyncDocumentReference]":
         return client.document(*self.root)
 
 
@@ -72,7 +85,13 @@ class FirestoreCollection(ReferenceModel):
     def from_firestore(cls, value: "CollectionReference") -> "FirestoreCollection":
         return cls.model_validate(value._path)
 
-    def to_firestore(self, client: "Client") -> "CollectionReference":
+    @overload
+    def to_firestore(self, client: "AsyncClient") -> "AsyncCollectionReference": ...
+    @overload
+    def to_firestore(self, client: "Client") -> "CollectionReference": ...
+    def to_firestore(
+        self, client: "Union[Client, AsyncClient]"
+    ) -> "Union[CollectionReference, AsyncCollectionReference]":
         return client.collection(*self.root)
 
 

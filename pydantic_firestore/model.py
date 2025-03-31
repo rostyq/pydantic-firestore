@@ -11,6 +11,8 @@ from typing import (
     TypedDict,
     Unpack,
     NotRequired,
+    Awaitable,
+    overload,
 )
 from itertools import chain, takewhile, zip_longest
 from functools import lru_cache, cache
@@ -28,18 +30,33 @@ if TYPE_CHECKING:
     from google.api_core.retry import Retry
     from google.cloud.firestore import (
         Transaction,
+        AsyncTransaction,
         Client,
+        AsyncClient,
         WriteOption,
         Query,
+        AsyncQuery,
         WriteBatch,
+        AsyncWriteBatch,
+        DocumentReference,
+        AsyncDocumentReference,
+        CollectionReference,
+        AsyncCollectionReference,
     )
-    from google.cloud.firestore_v1 import DocumentReference, CollectionReference
     from google.cloud.firestore_v1.types import WriteResult
     from google.cloud.firestore_v1.document import Timestamp
     from google.cloud.firestore_v1.bulk_writer import BulkWriter
 
 
-Source = Union["Client", "Transaction", "BulkWriter", "WriteBatch"]
+Source = Union[
+    "Client",
+    "AsyncClient",
+    "Transaction",
+    "AsyncTransaction",
+    "WriteBatch",
+    "AsyncWriteBatch",
+    "BulkWriter",
+]
 
 
 class PydanticParams(TypedDict):
@@ -162,19 +179,82 @@ class FirestoreHandler:
         reference: "DocumentReference",
         data: dict | None = None,
         **kwargs: Unpack[FirestoreWriteParams],
-    ) -> Optional[Union["WriteResult", "Timestamp"]]:
+    ) -> "Union[None, WriteResult, Timestamp]":
         return getattr(self, method)(reference, data=data, **kwargs)
 
 
+class AsyncFirestoreHandler:
+    async def create(
+        self,
+        reference: "AsyncDocumentReference",
+        data: dict,
+        **kwargs: Unpack[FirestoreCreateParams],
+    ) -> Optional["WriteResult"]:
+        return await reference.create(
+            data,
+            timeout=kwargs.get("timeout"),
+            retry=kwargs.get("retry", default_param()),
+        )
+
+    async def set(
+        self,
+        reference: "AsyncDocumentReference",
+        data: dict,
+        **kwargs: Unpack[FirestoreSetParams],
+    ) -> Optional["WriteResult"]:
+        return await reference.set(
+            data,
+            merge=kwargs.get("merge", False),
+            timeout=kwargs.get("timeout"),
+            retry=kwargs.get("retry", default_param()),
+        )
+
+    async def update(
+        self,
+        reference: "AsyncDocumentReference",
+        data: dict,
+        **kwargs: Unpack[FirestoreUpdateParams],
+    ) -> Optional["WriteResult"]:
+        return await reference.update(
+            data,
+            timeout=kwargs.get("timeout"),
+            retry=kwargs.get("retry", default_param()),
+            option=kwargs.get("option"),
+        )
+
+    async def delete(
+        self,
+        reference: "AsyncDocumentReference",
+        **kwargs: Unpack[FirestoreUpdateParams],
+    ) -> Optional["Timestamp"]:
+        return await reference.delete(
+            timeout=kwargs.get("timeout"),
+            retry=kwargs.get("retry", default_param()),
+            option=kwargs.get("option"),
+        )
+
+    async def write(
+        self,
+        method: Literal["create", "set", "update", "delete"],
+        reference: "AsyncDocumentReference",
+        data: dict | None = None,
+        **kwargs: Unpack[FirestoreWriteParams],
+    ) -> "Union[None, WriteResult, Timestamp]":
+        return await getattr(self, method)(reference, data=data, **kwargs)
+
+
 class TransactionHandler(FirestoreHandler):
-    def __init__(self, writer: Union["Transaction", "WriteBatch"]):
+    def __init__(
+        self,
+        writer: "Union[Transaction, AsyncTransaction, WriteBatch, AsyncWriteBatch]",
+    ):
         self.writer = writer
 
     def create(self, reference, data, **kwargs):
-        return self.writer.create(reference, data)
+        self.writer.create(reference, data)
 
     def set(self, reference, data, **kwargs):
-        return self.writer.set(
+        self.writer.set(
             reference,
             data,
             merge=kwargs.get("merge", False),
@@ -188,7 +268,7 @@ class TransactionHandler(FirestoreHandler):
         )
 
     def delete(self, reference, **kwargs):
-        return self.writer.delete(reference, option=kwargs.get("option"))
+        self.writer.delete(reference, option=kwargs.get("option"))
 
 
 class BulkHandler(FirestoreHandler):
@@ -196,10 +276,10 @@ class BulkHandler(FirestoreHandler):
         self.writer = writer
 
     def create(self, reference, data, **kwargs):
-        return self.writer.create(reference, data, attempts=kwargs.get("attempts", 0))
+        self.writer.create(reference, data, attempts=kwargs.get("attempts", 0))
 
     def set(self, reference, data, **kwargs):
-        return self.writer.set(
+        self.writer.set(
             reference,
             data,
             merge=kwargs.get("merge", False),
@@ -207,7 +287,7 @@ class BulkHandler(FirestoreHandler):
         )
 
     def update(self, reference, data, **kwargs):
-        return self.writer.update(
+        self.writer.update(
             reference,
             data,
             option=kwargs.get("option"),
@@ -215,36 +295,57 @@ class BulkHandler(FirestoreHandler):
         )
 
     def delete(self, reference, **kwargs):
-        return self.writer.delete(
+        self.writer.delete(
             reference, option=kwargs.get("option"), attempts=kwargs.get("attempts", 0)
         )
 
 
 fallback_handler = FirestoreHandler()
+async_fallback_handler = AsyncFirestoreHandler()
 
 
 @lru_cache
-def source_to_handler(source: Source) -> tuple["Client", FirestoreHandler]:
-    from google.cloud.firestore import Transaction, WriteBatch, Client
+def source_to_handler(
+    source: Source,
+) -> tuple[
+    "Union[Client, AsyncClient]", Union[FirestoreHandler, AsyncFirestoreHandler]
+]:
+    from google.cloud.firestore import (
+        Transaction,
+        WriteBatch,
+        Client,
+        AsyncClient,
+        AsyncWriteBatch,
+        AsyncTransaction,
+    )
     from google.cloud.firestore_v1.bulk_writer import BulkWriter
 
-    if isinstance(source, (Transaction, WriteBatch)):
+    if isinstance(source, (Transaction, AsyncTransaction, WriteBatch, AsyncWriteBatch)):
         return source._client, TransactionHandler(source)
     elif isinstance(source, BulkWriter):
         return source._client, BulkHandler(source)
     elif isinstance(source, Client):
         return source, fallback_handler
+    elif isinstance(source, AsyncClient):
+        return source, async_fallback_handler
     else:
         raise ValueError("Invalid firestore source")
 
 
 @lru_cache
-def source_to_tuple(source: Source) -> tuple["Client", Optional["Transaction"]]:
-    from google.cloud.firestore import Transaction, Client
+def source_to_tuple(
+    source: Source,
+) -> "tuple[Union[Client, AsyncClient], Union[None, Transaction, AsyncTransaction]]":
+    from google.cloud.firestore import (
+        Transaction,
+        AsyncTransaction,
+        Client,
+        AsyncClient,
+    )
 
-    if isinstance(source, Transaction):
+    if isinstance(source, (Transaction, AsyncTransaction)):
         return source._client, source
-    elif isinstance(source, Client):
+    elif isinstance(source, (Client, AsyncClient)):
         return source, None
     else:
         raise ValueError("Invalid firestore source")
@@ -293,16 +394,36 @@ class FirestoreModel(BaseModel):
     def firestore_document(cls, id: str, *args: str):
         return cls.firestore_collection(*args).document(id)
 
+    @overload
     @classmethod
     def document_reference(
         cls, client: "Client", id: str, *args: str
-    ) -> "DocumentReference":
+    ) -> "DocumentReference": ...
+    @overload
+    @classmethod
+    def document_reference(
+        cls, client: "AsyncClient", id: str, *args: str
+    ) -> "AsyncDocumentReference": ...
+    @classmethod
+    def document_reference(
+        cls, client: "Union[Client, AsyncClient]", id: str, *args: str
+    ) -> "Union[DocumentReference, AsyncDocumentReference]":
         return cls.firestore_document(id, *args).to_firestore(client)
 
+    @overload
     @classmethod
     def collection_reference(
         cls, client: "Client", *args: str
-    ) -> "CollectionReference":
+    ) -> "CollectionReference": ...
+    @overload
+    @classmethod
+    def collection_reference(
+        cls, client: "AsyncClient", *args: str
+    ) -> "AsyncCollectionReference": ...
+    @classmethod
+    def collection_reference(
+        cls, client: "Union[Client, AsyncClient]", *args: str
+    ) -> "Union[CollectionReference, AsyncCollectionReference]":
         return cls.firestore_collection(*args).to_firestore(client)
 
     @classmethod
@@ -384,16 +505,38 @@ class FirestoreModel(BaseModel):
             **kwargs,
         }
 
+    @overload
     @classmethod
     def firestore_read(
         cls: type[GenericModel],
-        source: Source,
+        source: Union["Client", "Transaction"],
         id: str,
         *args: str,
         strict: bool = False,
         context: dict[str, Any] | None = None,
         **kwargs: Unpack[FirestoreReadParams],
-    ) -> FirestoreSnapshot[GenericModel]:
+    ) -> FirestoreSnapshot[GenericModel]: ...
+    @overload
+    @classmethod
+    def firestore_read(
+        cls: type[GenericModel],
+        source: Union["AsyncClient", "AsyncTransaction"],
+        id: str,
+        *args: str,
+        strict: bool = False,
+        context: dict[str, Any] | None = None,
+        **kwargs: Unpack[FirestoreReadParams],
+    ) -> Awaitable[FirestoreSnapshot[GenericModel]]: ...
+    @classmethod
+    def firestore_read(
+        cls: type[GenericModel],
+        source: Union["Client", "AsyncClient", "Transaction", "AsyncTransaction"],
+        id: str,
+        *args: str,
+        strict: bool = False,
+        context: dict[str, Any] | None = None,
+        **kwargs: Unpack[FirestoreReadParams],
+    ) -> Union[FirestoreSnapshot[GenericModel], Awaitable[FirestoreSnapshot[GenericModel]]]:
         client, transaction = source_to_tuple(source)
         _cls = cast(type[FirestoreModel], cls)
         return FirestoreSnapshot[cls].from_firestore(
