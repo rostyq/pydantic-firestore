@@ -536,7 +536,9 @@ class FirestoreModel(BaseModel):
         strict: bool = False,
         context: dict[str, Any] | None = None,
         **kwargs: Unpack[FirestoreReadParams],
-    ) -> Union[FirestoreSnapshot[GenericModel], Awaitable[FirestoreSnapshot[GenericModel]]]:
+    ) -> Union[
+        FirestoreSnapshot[GenericModel], Awaitable[FirestoreSnapshot[GenericModel]]
+    ]:
         client, transaction = source_to_tuple(source)
         _cls = cast(type[FirestoreModel], cls)
         return FirestoreSnapshot[cls].from_firestore(
@@ -582,8 +584,26 @@ class FirestoreModel(BaseModel):
     ) -> Optional["Timestamp"]:
         return cls.firestore_write("delete", source, id, *args, **kwargs)
 
+    @overload
     @classmethod
-    def firestore_query(cls, source: Source, *args: str) -> "Query":
+    def firestore_query(
+        cls,
+        source: "Union[Client, Transaction]",
+        *args: str,
+    ) -> "Query": ...
+    @overload
+    @classmethod
+    def firestore_query(
+        cls,
+        source: "Union[AsyncClient, AsyncTransaction]",
+        *args: str,
+    ) -> "AsyncQuery": ...
+    @classmethod
+    def firestore_query(
+        cls,
+        source: "Union[Client, AsyncClient, Transaction, AsyncTransaction]",
+        *args: str,
+    ) -> "Union[Query, AsyncQuery]":
         client, _ = source_to_handler(source)
         return cls.collection_reference(client, *args)._query()
 
