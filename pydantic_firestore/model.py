@@ -514,7 +514,6 @@ class FirestoreModel(BaseModel):
             **kwargs,
         }
 
-    @overload
     @classmethod
     def firestore_read(
         cls: type[GenericModel],
